@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LITORAL 900 - Dashboard de Control de Calidad</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Recharts -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+        }
+        
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Importa Recharts desde el bundle UMD
+        const {
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+            PieChart, Pie, Cell, LineChart, Line, AreaChart, Area,
+            ScatterChart, Scatter, ComposedChart, RadarChart, PolarGrid, PolarAngleAxis, 
+            PolarRadiusAxis, Radar
+        } = window.Recharts;
+
+        // Lucide Icons - Crear componentes dinámicamente
+        const createIcon = (name) => {
+            return function Icon(props) {
+                const iconName = name;
+                const svgClass = props.className || 'w-6 h-6';
+                
+                const icons = {
+                    'Upload': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>',
+                    'FileText': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="13" x2="12" y2="17"></line><line x1="8" y1="15" x2="16" y2="15"></line></svg>',
+                    'AlertTriangle': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3.05h16.94a2 2 0 0 0 1.71-3.05L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+                    'CheckCircle': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+                    'Clock': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
+                    'BarChart2': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
+                    'Filter': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>',
+                    'Building': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"></rect><line x1="9" y1="2" x2="9" y2="22"></line><line x1="15" y1="2" x2="15" y2="22"></line><line x1="3" y1="7" x2="21" y2="7"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="17" x2="21" y2="17"></line></svg>',
+                    'MapPin': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>',
+                    'Activity': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>',
+                    'Briefcase': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>',
+                    'Layers': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 20 7 20 17 12 22 4 17 4 7 12 2"></polygon><polyline points="12 22 12 12"></polyline><polyline points="20 7 12 12 4 7"></polyline><polyline points="20 17 12 22 4 17"></polyline></svg>',
+                    'ArrowUpRight': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>',
+                    'ArrowDownRight': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="7" x2="17" y2="17"></line><polyline points="17 7 17 17 7 17"></polyline></svg>',
+                    'TrendingUp': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>',
+                    'TrendingDown': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>',
+                    'RefreshCw': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36"></path></svg>',
+                    'Download': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+                    'Zap': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>',
+                    'Shield': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>',
+                    'Wrench': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 1 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>',
+                    'Home': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+                    'Calendar': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+                    'Users': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+                    'Percent': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"></circle><circle cx="16" cy="18" r="3"></circle><line x1="14" y1="4" x2="10" y2="20"></line></svg>',
+                };
+                
+                return (
+                    <svg {...props} className={svgClass} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" dangerouslySetInnerHTML={{__html: icons[iconName] || ''}} />
+                );
+            };
+        };
+
+        const Upload = createIcon('Upload');
+        const FileText = createIcon('FileText');
+        const AlertTriangle = createIcon('AlertTriangle');
+        const CheckCircle = createIcon('CheckCircle');
+        const Clock = createIcon('Clock');
+        const BarChart2 = createIcon('BarChart2');
+        const Filter = createIcon('Filter');
+        const Building = createIcon('Building');
+        const MapPin = createIcon('MapPin');
+        const Activity = createIcon('Activity');
+        const Briefcase = createIcon('Briefcase');
+        const Layers = createIcon('Layers');
+        const ArrowUpRight = createIcon('ArrowUpRight');
+        const ArrowDownRight = createIcon('ArrowDownRight');
+        const TrendingUp = createIcon('TrendingUp');
+        const TrendingDown = createIcon('TrendingDown');
+        const RefreshCw = createIcon('RefreshCw');
+        const Download = createIcon('Download');
+        const Zap = createIcon('Zap');
+        const Shield = createIcon('Shield');
+        const Wrench = createIcon('Wrench');
+        const Home = createIcon('Home');
+        const Calendar = createIcon('Calendar');
+        const Users = createIcon('Users');
+        const Percent = createIcon('Percent');
+
+        // COLORES GERENCIALES
+        const THEME = {
+            primary: '#0f172a',
+            secondary: '#1e293b',
+            accent: '#d97706',
+            success: '#059669',
+            danger: '#be123c',
+            warning: '#f59e0b',
+            info: '#3b82f6',
+            neutral: '#64748b',
+            bg: '#f8fafc',
+            cardBg: '#ffffff',
+            grid: '#e2e8f0',
+            gold: '#d4af37',
+        };
+
+        const COLORS_PRIORITY = {
+            'Urgent': THEME.danger,
+            'High': THEME.warning,
+            'Medium': THEME.info,
+            'Low': THEME.neutral
+        };
+
+        const COLORS_STATUS = {
+            'Cerrado': THEME.success,
+            'Iniciado': THEME.warning,
+            'Abierto': THEME.danger,
+            'Listo para revisión': THEME.info
+        };
+
+        // UI COMPONENTS
+        const Card = ({ children, className = "" }) => (
+            <div className={`bg-white rounded-lg shadow-sm border border-slate-200 ${className}`}>
+                {children}
+            </div>
+        );
+
+        const KPICard = ({ title, value, trend, trendLabel, icon: Icon, type = "neutral", percentage = false }) => {
+            const colors = {
+                success: { border: THEME.success, icon: 'text-emerald-600', bg: 'bg-emerald-50' },
+                danger: { border: THEME.danger, icon: 'text-rose-600', bg: 'bg-rose-50' },
+                warning: { border: THEME.warning, icon: 'text-amber-600', bg: 'bg-amber-50' },
+                neutral: { border: THEME.primary, icon: 'text-slate-600', bg: 'bg-slate-50' },
+                info: { border: THEME.info, icon: 'text-blue-600', bg: 'bg-blue-50' }
+            };
+
+            const config = colors[type] || colors.neutral;
+
+            return (
+                <Card className="p-6 flex flex-col justify-between h-full border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: config.border }}>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{title}</p>
+                            <div className="flex items-baseline gap-2">
+                                <h3 className="text-4xl font-extrabold text-slate-900 mt-2">{value}</h3>
+                                {percentage && <span className="text-sm text-slate-500">%</span>}
+                            </div>
+                        </div>
+                        <div className={`p-3 ${config.bg} rounded-lg`}>
+                            <Icon className={`w-6 h-6 ${config.icon}`} />
+                        </div>
+                    </div>
+                    {trend && (
+                        <div className="mt-4 flex items-center gap-2">
+                            {trend >= 0 ? (
+                                <ArrowUpRight size={16} className={`${type === 'danger' ? 'text-rose-600' : 'text-emerald-600'}`} />
+                            ) : (
+                                <ArrowDownRight size={16} className="text-emerald-600" />
+                            )}
+                            <span className={`text-xs font-bold ${trend >= 0 && type === 'danger' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                {Math.abs(trend)}%
+                            </span>
+                            <span className="text-xs text-slate-400">{trendLabel}</span>
+                        </div>
+                    )}
+                </Card>
+            );
+        };
+
+        const StatBox = ({ label, value, icon: Icon, color = "slate" }) => (
+            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 bg-${color}-100 rounded-lg`}>
+                        <Icon className={`w-5 h-5 text-${color}-600`} />
+                    </div>
+                    <div>
+                        <p className="text-xs text-slate-500 font-semibold uppercase">{label}</p>
+                        <p className="text-lg font-bold text-slate-800">{value}</p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // HELPERS
+        const parseDate = (dateStr) => {
+            if (!dateStr) return null;
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                let year = parseInt(parts[2], 10);
+                if (year < 100) year += 2000;
+                return new Date(year, month, day);
+            }
+            return new Date(dateStr);
+        };
+
+        const parseCSV = (text) => {
+            const rows = [];
+            let currentRow = [];
+            let currentVal = '';
+            let inQuotes = false;
+
+            const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+            for (let i = 0; i < cleanText.length; i++) {
+                const char = cleanText[i];
+                const nextChar = cleanText[i + 1];
+
+                if (inQuotes) {
+                    if (char === '"' && nextChar === '"') {
+                        currentVal += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentVal += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        currentRow.push(currentVal.trim());
+                        currentVal = '';
+                    } else if (char === '\n') {
+                        currentRow.push(currentVal.trim());
+                        if (currentRow.some(c => c !== '')) rows.push(currentRow);
+                        currentRow = [];
+                        currentVal = '';
+                    } else {
+                        currentVal += char;
+                    }
+                }
+            }
+
+            if (currentVal || currentRow.length > 0) {
+                currentRow.push(currentVal.trim());
+                if (currentRow.some(c => c !== '')) rows.push(currentRow);
+            }
+
+            if (rows.length < 2) return [];
+
+            const headers = rows[0].map(h => h.trim().replace(/^"|"$/g, ''));
+            const result = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < Math.floor(headers.length * 0.5)) continue;
+
+                const obj = {};
+                headers.forEach((h, idx) => {
+                    obj[h] = row[idx] || '';
+                });
+
+                obj._dateObj = parseDate(obj['Fecha de notificación'] || obj['Fecha de creación']);
+
+                const locString = obj['Ubicación'] || '';
+                const locParts = locString.split('>').map(s => s.trim());
+
+                obj._torre = locParts[0] || 'General';
+                obj._piso = locParts.find(p => {
+                    const upper = p.toUpperCase();
+                    return upper.includes('PISO') || upper.includes('SOTANO') || upper.includes('SÓTANO') || upper.includes('NIVEL');
+                }) || 'Sin definir';
+
+                obj._departamento = locParts.find(p => {
+                    const upper = p.toUpperCase();
+                    return upper.includes('DPTO') || upper.includes('DP');
+                }) || '';
+
+                const specString = obj['Especialidad'] || '';
+                const specMatch = specString.match(/^(\d+)/);
+                obj._partidaCode = specMatch ? specMatch[1] : 'S/C';
+                obj._partidaName = specString.replace(/^\d+\s-\s/, '').split('-')[0].trim();
+
+                const tipoMap = {
+                    'Deficiencia': 'Deficiencia',
+                    'Seguridad': 'Seguridad',
+                    'Acabados': 'Acabados',
+                    'Eléctrico': 'Eléctrico',
+                    'Sanitario': 'Sanitario',
+                    'Estructural': 'Estructural'
+                };
+                obj._tipoLabel = tipoMap[obj['Tipo']] || obj['Tipo'] || 'Otros';
+
+                result.push(obj);
+            }
+            return result;
+        };
+
+        // MAIN COMPONENT
+        function DashboardProcoreAdvanced() {
+            const [data, setData] = React.useState([]);
+            const [fileName, setFileName] = React.useState('');
+            const [filterType, setFilterType] = React.useState('All');
+            const [filterPriority, setFilterPriority] = React.useState('All');
+            const [autoRefresh, setAutoRefresh] = React.useState(false);
+
+            const loadDemoData = () => {
+                const demoRaw = `Número,Tipo,Especialidad,Título,Persona asignada,Compañía de la persona asignada,Fecha de notificación,Estatus,Prioridad,Ubicación
+428,Deficiencia,110 - PRO - Control de Calidad,Conexiones firmes y sin fugas,Edwin Aroni,ARONI,26/12/25,Iniciado,Urgent,TORRE>PISO 14>DPTO 1401
+429,Deficiencia,110 - PRO - Control de Calidad,Fuga en lavadero,Edwin Aroni,ARONI,26/12/25,Iniciado,High,TORRE>PISO 14>DPTO 1402
+430,Seguridad,111 - PRO - Seguridad Industrial,Falta baranda perimétrica,Victor Andres,PADOVA,27/12/25,Abierto,Urgent,TORRE>PISO 15
+431,Acabados,130 - PRO - Pintura,Retoque en muro cortina,Ana Gomez,PINTURAS SA,27/12/25,Cerrado,Medium,TORRE>PISO 05
+432,Eléctrico,120 - PRO - Electricidad,Tablero sin rotular,Maria L,ELECTRO,28/12/25,Iniciado,High,TORRE>PISO 08
+433,Deficiencia,110 - PRO - Control de Calidad,Desnivel en contrapiso,Carlos R,CONCRETO MIX,28/12/25,Iniciado,Medium,TORRE>SOTANO 1
+434,Seguridad,111 - PRO - Seguridad Industrial,Extintor vencido,Victor Andres,PADOVA,29/12/25,Abierto,High,TORRE>PISO 01
+435,Deficiencia,110 - PRO - Control de Calidad,Ventana rayada,Luis Villa,VIDRIOS PERU,30/12/25,Cerrado,Low,TORRE>PISO 14
+436,Eléctrico,120 - PRO - Electricidad,Cable expuesto pasillo,Maria L,ELECTRO,02/01/26,Iniciado,Urgent,TORRE>PISO 02
+437,Acabados,130 - PRO - Pintura,Mancha en cielo raso,Ana Gomez,PINTURAS SA,03/01/26,Iniciado,Medium,TORRE>PISO 14
+438,Sanitario,140 - PRO - Sanitaria,Tuberías mal selladas,Pedro Sánchez,SANITARIA PERU,04/01/26,Cerrado,Low,TORRE>PISO 10
+439,Estructural,150 - PRO - Estructura,Grieta menor en muro,Roberto Lee,STRUCT ING,05/01/26,Iniciado,High,TORRE>PISO 03
+440,Seguridad,111 - PRO - Seguridad Industrial,Salida de emergencia bloqueada,Victor Andres,PADOVA,05/01/26,Abierto,Urgent,TORRE>PISO 12
+441,Deficiencia,110 - PRO - Control de Calidad,Piso rayado,Luis Villa,VIDRIOS PERU,06/01/26,Cerrado,Medium,TORRE>PISO 06
+442,Acabados,130 - PRO - Pintura,Falta pintura en moldura,Ana Gomez,PINTURAS SA,06/01/26,Iniciado,Low,TORRE>PISO 07`;
+
+                setData(parseCSV(demoRaw));
+                setFileName('LITORAL900_DEMO_26DIC2025.csv');
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setFileName(file.name);
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        try {
+                            const result = parseCSV(ev.target.result);
+                            if (result.length === 0) {
+                                alert("No se pudieron leer filas válidas. Verifica el formato del CSV.");
+                            }
+                            setData(result);
+                        } catch (err) {
+                            console.error("Error parsing CSV:", err);
+                            alert("Error procesando el archivo.");
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+
+            const analytics = React.useMemo(() => {
+                if (data.length === 0) return null;
+
+                let filtered = data;
+                if (filterType !== 'All') {
+                    filtered = filtered.filter(d => d['Tipo'] === filterType);
+                }
+                if (filterPriority !== 'All') {
+                    filtered = filtered.filter(d => d['Prioridad'] === filterPriority);
+                }
+
+                const total = filtered.length;
+                const closed = filtered.filter(d => d['Estatus'] === 'Cerrado').length;
+                const open = filtered.filter(d => d['Estatus'] === 'Abierto').length;
+                const inProgress = filtered.filter(d => d['Estatus'] === 'Iniciado').length;
+                const critical = filtered.filter(d => d['Prioridad'] === 'Urgent').length;
+                const highPriority = filtered.filter(d => d['Prioridad'] === 'High').length;
+
+                const effectivenessRate = Math.round((closed / total) * 100) || 0;
+                const criticalityIndex = Math.round((critical / total) * 100) || 0;
+
+                // Partidas
+                const partidaMap = {};
+                filtered.forEach(row => {
+                    const key = `${row._partidaCode} - ${row._partidaName}`;
+                    partidaMap[key] = (partidaMap[key] || 0) + 1;
+                });
+                const partidaData = Object.keys(partidaMap)
+                    .map(k => ({ name: k, value: partidaMap[k] }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 8);
+
+                // Location
+                const floorMap = {};
+                filtered.forEach(row => {
+                    let floor = row._piso.replace('TORRE>', '').trim();
+                    if (!floor || floor === 'Sin definir') floor = 'Exteriores';
+                    floorMap[floor] = (floorMap[floor] || 0) + 1;
+                });
+                const locationData = Object.keys(floorMap)
+                    .map(k => ({ name: k, count: floorMap[k] }))
+                    .sort((a, b) => {
+                        const getVal = (s) => {
+                            const upper = s.toUpperCase();
+                            if (upper.includes('SOTANO') || upper.includes('SÓTANO')) return -parseInt(s.match(/\d+/)?.[0] || 0) - 100;
+                            if (upper.includes('PISO') || upper.includes('NIVEL')) return parseInt(s.match(/\d+/)?.[0] || 0);
+                            return 0;
+                        };
+                        return getVal(b.name) - getVal(a.name);
+                    });
+
+                // Status
+                const statusMap = {};
+                filtered.forEach(row => {
+                    const status = row['Estatus'];
+                    statusMap[status] = (statusMap[status] || 0) + 1;
+                });
+                const statusData = Object.keys(statusMap).map(k => ({
+                    name: k,
+                    value: statusMap[k],
+                    fill: COLORS_STATUS[k] || THEME.neutral
+                }));
+
+                // Priority
+                const priorityMap = {};
+                filtered.forEach(row => {
+                    const priority = row['Prioridad'];
+                    priorityMap[priority] = (priorityMap[priority] || 0) + 1;
+                });
+                const priorityData = Object.keys(priorityMap).map(k => ({
+                    name: k,
+                    value: priorityMap[k],
+                    fill: COLORS_PRIORITY[k] || THEME.neutral
+                }));
+
+                // Type
+                const tipoMap = {};
+                filtered.forEach(row => {
+                    const tipo = row._tipoLabel;
+                    tipoMap[tipo] = (tipoMap[tipo] || 0) + 1;
+                });
+                const tipoData = Object.keys(tipoMap).map(k => ({
+                    name: k,
+                    value: tipoMap[k]
+                })).sort((a, b) => b.value - a.value);
+
+                // Trends
+                const dateMap = {};
+                filtered.forEach(row => {
+                    if (row._dateObj && !isNaN(row._dateObj)) {
+                        const dateKey = row._dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' });
+                        if (!dateMap[dateKey]) dateMap[dateKey] = { date: dateKey, created: 0, closed: 0, open: 0 };
+                        dateMap[dateKey].created += 1;
+                        if (row['Estatus'] === 'Cerrado') dateMap[dateKey].closed += 1;
+                        if (row['Estatus'] === 'Abierto') dateMap[dateKey].open += 1;
+                    }
+                });
+                const trendData = Object.values(dateMap).sort((a, b) => {
+                    const [d1, m1] = a.date.split('/');
+                    const [d2, m2] = b.date.split('/');
+                    return new Date(2025, m1 - 1, d1) - new Date(2025, m2 - 1, d2);
+                });
+
+                // Companies
+                const companiaMap = {};
+                filtered.forEach(row => {
+                    const cia = row['Compañía de la persona asignada'] || 'Sin asignar';
+                    companiaMap[cia] = (companiaMap[cia] || 0) + 1;
+                });
+                const companiaData = Object.keys(companiaMap)
+                    .map(k => ({ name: k, value: companiaMap[k] }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 8);
+
+                const avgDaysOpen = filtered
+                    .filter(d => d._dateObj)
+                    .reduce((acc, d) => acc + Math.floor((new Date() - d._dateObj) / (1000 * 60 * 60 * 24)), 0) / (filtered.filter(d => d._dateObj).length || 1);
+
+                return {
+                    total, closed, open, inProgress, critical, highPriority,
+                    effectivenessRate, criticalityIndex, avgDaysOpen,
+                    partidaData, locationData,
+                    statusData, priorityData, tipoData, trendData, companiaData,
+                    raw: filtered
+                };
+            }, [data, filterType, filterPriority]);
+
+            // Load Screen
+            if (data.length === 0) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-6 font-sans">
+                        <div className="max-w-2xl w-full bg-white rounded-2xl shadow-2xl p-12 text-center">
+                            <div className="mb-8 flex justify-center">
+                                <div className="h-20 w-20 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl flex items-center justify-center shadow-lg">
+                                    <Building className="text-white w-10 h-10" />
+                                </div>
+                            </div>
+                            <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">LITORAL 900</h1>
+                            <p className="text-lg font-semibold text-slate-600 mt-2">Sistema de Control de Calidad</p>
+                            <p className="text-sm text-slate-400 mt-1">Análisis en Tiempo Real de Observaciones</p>
+
+                            <div className="mt-10 space-y-6">
+                                <div className="p-10 border-2 border-dashed border-slate-300 rounded-xl hover:border-slate-800 hover:bg-slate-50 transition-all cursor-pointer relative group">
+                                    <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 z-10 cursor-pointer" />
+                                    <Upload className="mx-auto w-12 h-12 text-slate-400 group-hover:text-slate-800 transition-colors" />
+                                    <p className="mt-4 text-base font-semibold text-slate-700">Carga tu archivo CSV</p>
+                                    <p className="mt-1 text-sm text-slate-500">O arrastra el archivo desde Procore</p>
+                                </div>
+
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-slate-300"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-sm">
+                                        <span className="px-2 bg-white text-slate-500 font-medium">O prueba con</span>
+                                    </div>
+                                </div>
+
+                                <button onClick={loadDemoData} className="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl font-bold text-lg hover:shadow-xl transition-all shadow-lg">
+                                    📊 Cargar Datos Demo
+                                </button>
+                            </div>
+                            <p className="mt-8 text-xs text-slate-400">Dashboard profesional para Litoral 900 • Soporta exportaciones CSV de Procore</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Main Dashboard
+            return (
+                <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-800 font-sans">
+                    <header className="bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-lg sticky top-0 z-30" style={{ borderBottom: '4px solid #d97706' }}>
+                        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between flex-wrap gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-white/10 p-3 rounded-lg backdrop-blur-sm">
+                                    <Building className="text-amber-400 w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h1 className="font-bold text-2xl tracking-wide">LITORAL 900</h1>
+                                    <p className="text-xs text-slate-300 uppercase tracking-widest">Dashboard de Control de Calidad</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <div className="hidden md:block text-right">
+                                    <p className="text-xs text-slate-300 uppercase">Archivo</p>
+                                    <p className="text-sm font-mono text-amber-300">{fileName.slice(0, 20)}...</p>
+                                </div>
+                                <label className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold uppercase rounded-lg border border-slate-700 transition-colors cursor-pointer">
+                                    <Upload size={14} />
+                                    CSV
+                                    <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                                </label>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-6 pt-8 pb-12 space-y-8">
+                        <div className="flex flex-wrap gap-4 items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex gap-2 flex-wrap">
+                                {['All', 'Deficiencia', 'Seguridad', 'Acabados'].map(type => (
+                                    <button
+                                        key={type}
+                                        onClick={() => setFilterType(type)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                                            filterType === type
+                                                ? 'bg-slate-900 text-white shadow-md'
+                                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        {type === 'All' ? '📊 Todos' : type}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <KPICard
+                                title="Total Observaciones"
+                                value={analytics.total}
+                                icon={FileText}
+                                type="neutral"
+                            />
+                            <KPICard
+                                title="Hallazgos Críticos"
+                                value={analytics.critical}
+                                trend={analytics.critical > 5 ? 3 : -2}
+                                trendLabel="vs semana"
+                                type="danger"
+                                icon={AlertTriangle}
+                            />
+                            <KPICard
+                                title="Efectividad"
+                                value={analytics.effectivenessRate}
+                                percentage={true}
+                                trend={analytics.effectivenessRate >= 60 ? 5 : -3}
+                                trendLabel="vs mes"
+                                type="success"
+                                icon={CheckCircle}
+                            />
+                            <KPICard
+                                title="Índice Criticidad"
+                                value={analytics.criticalityIndex}
+                                percentage={true}
+                                type={analytics.criticalityIndex > 20 ? "danger" : "warning"}
+                                icon={Zap}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <Card className="p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
+                                        <MapPin size={20} className="text-amber-500" />
+                                        Distribución por Nivel
+                                    </h3>
+                                </div>
+                                <div className="h-[300px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={analytics.locationData} layout="vertical" margin={{ left: 100, right: 20 }}>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                                            <XAxis type="number" stroke={THEME.neutral} />
+                                            <YAxis dataKey="name" type="category" width={95} tick={{ fontSize: 12, fill: '#334155' }} />
+                                            <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1e293b', color: '#fff' }} />
+                                            <Bar dataKey="count" fill="#334155" radius={[0, 4, 4, 0]} barSize={24}>
+                                                {analytics.locationData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={index < 3 ? THEME.danger : THEME.neutral} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </Card>
+
+                            <Card className="p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
+                                        <Activity size={20} className="text-emerald-500" />
+                                        Estado de Observaciones
+                                    </h3>
+                                </div>
+                                <div className="h-[300px] flex items-center justify-center">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={analytics.statusData}
+                                                cx="50%"
+                                                cy="50%"
+                                                labelLine={false}
+                                                label={({ name, value }) => `${name}: ${value}`}
+                                                outerRadius={80}
+                                                fill="#8884d8"
+                                                dataKey="value"
+                                            >
+                                                {analytics.statusData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </Card>
+                        </div>
+
+                        <Card className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
+                                    <Layers size={20} className="text-indigo-500" />
+                                    Top Especialidades (Pareto)
+                                </h3>
+                            </div>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={analytics.partidaData} barSize={40}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} angle={-45} textAnchor="end" height={100} />
+                                        <YAxis hide />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1e293b', color: '#fff' }} />
+                                        <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]}>
+                                            {analytics.partidaData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={index === 0 ? THEME.danger : '#4f46e5'} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </Card>
+
+                        <Card className="overflow-hidden">
+                            <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                    <FileText size={20} />
+                                    Desglose Detallado
+                                </h3>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-4">ID</th>
+                                            <th className="px-6 py-4">Tipo</th>
+                                            <th className="px-6 py-4">Ubicación</th>
+                                            <th className="px-6 py-4">Prioridad</th>
+                                            <th className="px-6 py-4">Estado</th>
+                                            <th className="px-6 py-4">Fecha</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {analytics.raw.slice(0, 15).map((row, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-6 py-3 font-mono text-xs font-bold">#{row.Número}</td>
+                                                <td className="px-6 py-3 text-xs">
+                                                    <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold">{row._tipoLabel}</span>
+                                                </td>
+                                                <td className="px-6 py-3 text-xs font-semibold">{row._piso}</td>
+                                                <td className="px-6 py-3" style={{ color: COLORS_PRIORITY[row['Prioridad']] }}>
+                                                    <span className="text-xs font-bold">{row['Prioridad']}</span>
+                                                </td>
+                                                <td className="px-6 py-3">
+                                                    <span className="text-xs font-semibold" style={{ color: COLORS_STATUS[row['Estatus']] }}>
+                                                        {row['Estatus']}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-3 text-xs text-slate-400">
+                                                    {row._dateObj ? row._dateObj.toLocaleDateString('es-PE') : 'N/A'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<DashboardProcoreAdvanced />);
+    </script>
+</body>
+</html>
