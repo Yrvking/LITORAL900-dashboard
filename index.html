@@ -143,6 +143,8 @@
         let appData = [];
         let fileName = '';
         let filterType = 'All';
+        let currentPage = 1;
+        const itemsPerPage = 20;
 
         // ============ RENDER FUNCTIONS ============
         function renderUploadScreen() {
@@ -245,17 +247,26 @@
             };
         }
 
-        function renderBarChart(data, maxVal, wide = false) {
+        function renderBarChart(data, maxVal, wide = false, chartType = 'floor') {
             return Object.entries(data).map(([name, value]) => {
                 const width = Math.max((value / maxVal) * 100, 8);
                 const labelWidth = wide ? 'w-48' : 'w-24';
+                const pct = Math.round((value / Object.values(data).reduce((a,b) => a+b, 0)) * 100);
+                const escapedName = name.replace(/'/g, "\\'");
                 return `
-                    <div class="flex items-center gap-3 mb-3">
+                    <div class="flex items-center gap-3 mb-3 relative group">
                         <div class="${labelWidth} text-sm text-slate-700 font-medium" title="${name}">${name}</div>
-                        <div class="flex-1 bg-slate-100 rounded-full h-7 overflow-hidden">
-                            <div class="bar h-full bg-slate-700 rounded-full flex items-center justify-end pr-3" style="width: ${width}%">
+                        <div class="flex-1 bg-slate-100 rounded-full h-7 overflow-hidden cursor-pointer"
+                             onclick="showChartDetail('${chartType}', '${escapedName}')">
+                            <div class="bar h-full bg-slate-700 rounded-full flex items-center justify-end pr-3 hover:bg-slate-600" style="width: ${width}%">
                                 <span class="text-xs text-white font-bold">${value}</span>
                             </div>
+                        </div>
+                        <!-- Tooltip -->
+                        <div class="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap shadow-lg">
+                            <div class="font-bold">${name}</div>
+                            <div class="text-slate-300">${value} observaciones (${pct}%)</div>
+                            <div class="text-amber-400 text-[10px] mt-1">Click para ver detalle</div>
                         </div>
                     </div>
                 `;
@@ -269,8 +280,10 @@
             return Object.entries(statusMap).map(([name, value]) => {
                 const pct = Math.round((value / total) * 100);
                 const color = colors[name] || '#64748b';
+                const escapedName = name.replace(/'/g, "\\'");
                 return `
-                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg mb-2">
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg mb-2 hover:bg-slate-100 cursor-pointer transition-colors group relative"
+                         onclick="showChartDetail('status', '${escapedName}')">
                         <div class="flex items-center gap-2">
                             <div class="w-3 h-3 rounded-full" style="background-color: ${color}"></div>
                             <span class="text-sm font-medium text-slate-700">${name}</span>
@@ -278,6 +291,10 @@
                         <div class="flex items-center gap-2">
                             <span class="text-lg font-bold text-slate-900">${value}</span>
                             <span class="text-xs text-slate-500">(${pct}%)</span>
+                        </div>
+                        <!-- Tooltip -->
+                        <div class="absolute right-0 top-full mt-1 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap shadow-lg">
+                            <div class="text-amber-400">Click para ver ${value} observaciones</div>
                         </div>
                     </div>
                 `;
@@ -360,12 +377,14 @@
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                                 <h3 class="font-bold text-slate-800 text-lg mb-4">📍 Distribución por Nivel</h3>
+                                <p class="text-xs text-slate-500 mb-3">Click en una barra para ver observaciones de ese nivel</p>
                                 <div class="space-y-1">
-                                    ${renderBarChart(analytics.floorMap, maxFloor)}
+                                    ${renderBarChart(analytics.floorMap, maxFloor, false, 'floor')}
                                 </div>
                             </div>
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                                 <h3 class="font-bold text-slate-800 text-lg mb-4">📊 Estado de Observaciones</h3>
+                                <p class="text-xs text-slate-500 mb-3">Click en un estado para filtrar</p>
                                 <div>
                                     ${renderStatusChart(analytics.statusMap)}
                                 </div>
@@ -375,16 +394,35 @@
                         <!-- Type Chart -->
                         <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                             <h3 class="font-bold text-slate-800 text-lg mb-4">🔧 Distribución por Tipo</h3>
+                            <p class="text-xs text-slate-500 mb-3">Click en una barra para ver observaciones de ese tipo</p>
                             <div class="grid grid-cols-1 gap-2">
-                                ${renderBarChart(analytics.tipoMap, maxTipo, true)}
+                                ${renderBarChart(analytics.tipoMap, maxTipo, true, 'tipo')}
+                            </div>
+                        </div>
+
+                        <!-- Modal para detalles de gráfico -->
+                        <div id="chartDetailModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+                            <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+                                <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
+                                    <h3 id="modalTitle" class="font-bold text-lg">Detalle</h3>
+                                    <button onclick="closeChartDetail()" class="text-white hover:text-amber-400 text-2xl">&times;</button>
+                                </div>
+                                <div id="modalContent" class="p-4 overflow-y-auto max-h-[60vh]"></div>
                             </div>
                         </div>
 
                         <!-- Table -->
                         <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-                            <div class="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
-                                <h3 class="font-bold text-lg text-slate-800">📋 Desglose Detallado</h3>
-                                <span class="text-xs text-slate-500">Click en una fila para ver detalles</span>
+                            <div class="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                    <h3 class="font-bold text-lg text-slate-800">📋 Desglose Detallado</h3>
+                                    <span class="text-xs text-slate-500">Mostrando ${Math.min(currentPage * itemsPerPage, analytics.raw.length)} de ${analytics.raw.length} observaciones</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="changePage(-1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">← Anterior</button>
+                                    <span class="text-sm text-slate-600">Página ${currentPage} de ${Math.ceil(analytics.raw.length / itemsPerPage)}</span>
+                                    <button onclick="changePage(1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage >= Math.ceil(analytics.raw.length / itemsPerPage) ? 'opacity-50 cursor-not-allowed' : ''}">Siguiente →</button>
+                                </div>
                             </div>
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left text-sm text-slate-600">
@@ -400,10 +438,12 @@
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100">
-                                        ${analytics.raw.slice(0, 30).map((row, idx) => `
-                                            <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="toggleRow(${idx})">
+                                        ${analytics.raw.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((row, idx) => {
+                                            const realIdx = (currentPage - 1) * itemsPerPage + idx;
+                                            return `
+                                            <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="toggleRow(${realIdx})">
                                                 <td class="px-4 py-3 text-slate-400">
-                                                    <svg id="arrow-${idx}" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <svg id="arrow-${realIdx}" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                                                     </svg>
                                                 </td>
@@ -424,7 +464,7 @@
                                                     ${row._dateObj ? row._dateObj.toLocaleDateString('es-PE') : 'N/A'}
                                                 </td>
                                             </tr>
-                                            <tr id="detail-${idx}" class="hidden bg-slate-50">
+                                            <tr id="detail-${realIdx}" class="hidden bg-slate-50">
                                                 <td colspan="7" class="px-6 py-4">
                                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                         <div class="bg-white p-4 rounded-lg border border-slate-200">
@@ -447,7 +487,7 @@
                                                     </div>
                                                 </td>
                                             </tr>
-                                        `).join('')}
+                                        `}).join('')}
                                     </tbody>
                                 </table>
                             </div>
@@ -529,8 +569,89 @@
 
         function setFilter(type) {
             filterType = type;
+            currentPage = 1;
             render();
         }
+
+        function changePage(delta) {
+            const analytics = calculateAnalytics(appData, filterType);
+            const maxPage = Math.ceil(analytics.raw.length / itemsPerPage);
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= maxPage) {
+                currentPage = newPage;
+                render();
+            }
+        }
+
+        function showChartDetail(chartType, filterValue) {
+            const modal = document.getElementById('chartDetailModal');
+            const title = document.getElementById('modalTitle');
+            const content = document.getElementById('modalContent');
+            
+            let filtered = appData;
+            if (filterType !== 'All') {
+                filtered = filtered.filter(d => d['Tipo'] === filterType);
+            }
+            
+            let items = [];
+            let titleText = '';
+            
+            if (chartType === 'floor') {
+                items = filtered.filter(d => {
+                    let floor = d._piso.replace('TORRE>', '').trim();
+                    if (!floor || floor === 'Sin definir') floor = 'Exteriores';
+                    return floor === filterValue;
+                });
+                titleText = `📍 Observaciones en ${filterValue}`;
+            } else if (chartType === 'tipo') {
+                items = filtered.filter(d => d._tipoLabel === filterValue);
+                titleText = `🔧 Observaciones de tipo: ${filterValue}`;
+            } else if (chartType === 'status') {
+                items = filtered.filter(d => d['Estatus'] === filterValue);
+                titleText = `📊 Observaciones con estado: ${filterValue}`;
+            }
+            
+            title.textContent = `${titleText} (${items.length})`;
+            
+            content.innerHTML = `
+                <div class="space-y-3">
+                    ${items.slice(0, 50).map(row => `
+                        <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span class="font-mono text-xs font-bold text-slate-600">#${row['Número'] || 'N/A'}</span>
+                                        <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-bold">${row._tipoLabel}</span>
+                                        <span class="text-xs font-bold" style="color: ${COLORS_PRIORITY[row['Prioridad']] || '#64748b'}">${row['Prioridad'] || 'N/A'}</span>
+                                    </div>
+                                    <p class="font-medium text-slate-800">${row['Título'] || row['Descripción'] || 'Sin título'}</p>
+                                    <div class="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                                        <span>📍 ${row._piso}</span>
+                                        <span>👤 ${row['Persona asignada'] || 'Sin asignar'}</span>
+                                        <span>📅 ${row._dateObj ? row._dateObj.toLocaleDateString('es-PE') : 'N/A'}</span>
+                                    </div>
+                                </div>
+                                <span class="text-xs font-semibold px-2 py-1 rounded" style="color: ${COLORS_STATUS[row['Estatus']] || '#64748b'}; background: ${COLORS_STATUS[row['Estatus']] ? COLORS_STATUS[row['Estatus']] + '20' : '#64748b20'}">
+                                    ${row['Estatus'] || 'N/A'}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${items.length > 50 ? `<p class="text-center text-slate-500 text-sm py-4">... y ${items.length - 50} observaciones más</p>` : ''}
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeChartDetail() {
+            document.getElementById('chartDetailModal').classList.add('hidden');
+        }
+
+        // Cerrar modal con Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeChartDetail();
+        });
 
         function toggleRow(idx) {
             const detailRow = document.getElementById(`detail-${idx}`);
