@@ -54,6 +54,42 @@
             return new Date(dateStr);
         };
 
+        // Función para extraer ubicación según categorías específicas
+        const extractUbicacion = (locUpper, locParts) => {
+            // Buscar coincidencias específicas
+            for (const part of locParts) {
+                const upper = part.toUpperCase().trim();
+                
+                // PISO con número (PISO 1, PISO 2, etc.)
+                const pisoMatch = upper.match(/PISO\s*(\d+)/);
+                if (pisoMatch) {
+                    return `PISO ${pisoMatch[1]}`;
+                }
+                
+                // SOTANO con número
+                const sotanoMatch = upper.match(/S[OÓ]TANO\s*(\d*)/);
+                if (sotanoMatch) {
+                    return sotanoMatch[1] ? `SOTANO ${sotanoMatch[1]}` : 'SOTANO';
+                }
+            }
+            
+            // Buscar en string completo
+            if (locUpper.includes('ANILLO')) return 'ANILLO';
+            if (locUpper.includes('CISTERNA')) return 'CISTERNA';
+            if (locUpper.includes('AZOTEA')) return 'AZOTEA';
+            if (locUpper.includes('TECHO')) return 'TECHO';
+            
+            // PISO en string completo
+            const pisoMatch = locUpper.match(/PISO\s*(\d+)/);
+            if (pisoMatch) return `PISO ${pisoMatch[1]}`;
+            
+            // SOTANO en string completo
+            const sotanoMatch = locUpper.match(/S[OÓ]TANO\s*(\d*)/);
+            if (sotanoMatch) return sotanoMatch[1] ? `SOTANO ${sotanoMatch[1]}` : 'SOTANO';
+            
+            return 'Sin definir';
+        };
+
         const parseCSV = (text) => {
             const rows = [];
             let currentRow = [];
@@ -115,12 +151,12 @@
 
                 const locString = obj['Ubicación'] || '';
                 const locParts = locString.split('>').map(s => s.trim());
+                const locUpper = locString.toUpperCase();
 
                 obj._torre = locParts[0] || 'General';
-                obj._piso = locParts.find(p => {
-                    const upper = p.toUpperCase();
-                    return upper.includes('PISO') || upper.includes('SOTANO') || upper.includes('SÓTANO') || upper.includes('NIVEL');
-                }) || 'Sin definir';
+                
+                // Extraer ubicación específica según categorías
+                obj._piso = extractUbicacion(locUpper, locParts);
 
                 obj._departamento = locParts.find(p => {
                     const upper = p.toUpperCase();
@@ -224,12 +260,31 @@
                 priorityMap[priority] = (priorityMap[priority] || 0) + 1;
             });
 
-            // Floor distribution
+            // Floor distribution - ordenado según lista específica
             const floorMap = {};
+            const floorOrder = [
+                'ANILLO', 'CISTERNA', 
+                'SOTANO 6', 'SOTANO 5', 'SOTANO 4', 'SOTANO 3', 'SOTANO 2', 'SOTANO 1', 'SOTANO',
+                'AZOTEA',
+                'PISO 1', 'PISO 2', 'PISO 3', 'PISO 4', 'PISO 5', 'PISO 6', 'PISO 7', 'PISO 8',
+                'PISO 9', 'PISO 10', 'PISO 11', 'PISO 12', 'PISO 13', 'PISO 14', 'PISO 15',
+                'TECHO', 'Sin definir'
+            ];
+            
             filtered.forEach(row => {
-                let floor = row._piso.replace('TORRE>', '').trim();
-                if (!floor || floor === 'Sin definir') floor = 'Exteriores';
+                let floor = row._piso;
+                if (!floor || floor === 'Sin definir') floor = 'Sin definir';
                 floorMap[floor] = (floorMap[floor] || 0) + 1;
+            });
+            
+            // Ordenar según lista predefinida
+            const sortedFloorMap = {};
+            floorOrder.forEach(f => {
+                if (floorMap[f]) sortedFloorMap[f] = floorMap[f];
+            });
+            // Agregar cualquier ubicación no listada
+            Object.keys(floorMap).forEach(f => {
+                if (!sortedFloorMap[f]) sortedFloorMap[f] = floorMap[f];
             });
 
             // Type distribution
@@ -242,7 +297,7 @@
             return {
                 total, closed, open, inProgress, critical,
                 effectivenessRate, criticalityIndex,
-                statusMap, priorityMap, floorMap, tipoMap,
+                statusMap, priorityMap, floorMap: sortedFloorMap, tipoMap,
                 raw: filtered
             };
         }
