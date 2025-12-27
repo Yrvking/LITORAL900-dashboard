@@ -181,6 +181,49 @@
         let filterType = 'All';
         let currentPage = 1;
         const itemsPerPage = 20;
+        let timelineFilter = 'all'; // 'all', 'lastMonth', 'lastWeek'
+
+        // Función para calcular datos de línea de tiempo
+        function calculateTimelineData(data, filter) {
+            let filtered = data.filter(d => d._dateObj);
+            
+            // Aplicar filtro de tipo si está activo
+            if (filterType !== 'All') {
+                filtered = filtered.filter(d => d['Tipo'] === filterType);
+            }
+            
+            // Aplicar filtro de tiempo
+            const now = new Date();
+            if (filter === 'lastMonth') {
+                const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                filtered = filtered.filter(d => d._dateObj >= oneMonthAgo);
+            } else if (filter === 'lastWeek') {
+                const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                filtered = filtered.filter(d => d._dateObj >= oneWeekAgo);
+            }
+            
+            // Agrupar por fecha
+            const dateMap = {};
+            filtered.forEach(row => {
+                const dateKey = row._dateObj.toISOString().split('T')[0];
+                if (!dateMap[dateKey]) {
+                    dateMap[dateKey] = { total: 0, cerrado: 0, abierto: 0, iniciado: 0 };
+                }
+                dateMap[dateKey].total++;
+                const status = (row['Estatus'] || '').toLowerCase();
+                if (status === 'cerrado') dateMap[dateKey].cerrado++;
+                else if (status === 'abierto') dateMap[dateKey].abierto++;
+                else if (status === 'iniciado') dateMap[dateKey].iniciado++;
+            });
+            
+            // Ordenar por fecha
+            const sortedDates = Object.keys(dateMap).sort();
+            return sortedDates.map(date => ({
+                date,
+                displayDate: new Date(date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }),
+                ...dateMap[date]
+            }));
+        }
 
         // ============ RENDER FUNCTIONS ============
         function renderUploadScreen() {
@@ -328,6 +371,121 @@
             }).join('');
         }
 
+        function renderTimelineSection() {
+            const timelineData = calculateTimelineData(appData, timelineFilter);
+            
+            if (timelineData.length === 0) {
+                return `
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="font-bold text-slate-800 text-lg mb-4">📈 Línea de Tiempo de Observaciones</h3>
+                        <p class="text-slate-500 text-center py-8">No hay datos de fechas disponibles para mostrar la línea de tiempo.</p>
+                    </div>
+                `;
+            }
+            
+            const maxTotal = Math.max(...timelineData.map(d => d.total));
+            const chartHeight = 200;
+            const barWidth = Math.max(30, Math.min(60, 800 / timelineData.length));
+            const chartWidth = timelineData.length * (barWidth + 10) + 60;
+            
+            // Calcular estadísticas para el período
+            const totalObs = timelineData.reduce((sum, d) => sum + d.total, 0);
+            const totalCerrado = timelineData.reduce((sum, d) => sum + d.cerrado, 0);
+            const avgPerDay = (totalObs / timelineData.length).toFixed(1);
+            
+            return `
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                    <div class="flex items-center justify-between mb-4 flex-wrap gap-4">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-lg">📈 Línea de Tiempo de Observaciones</h3>
+                            <p class="text-xs text-slate-500">Evolución de observaciones por fecha</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="setTimelineFilter('all')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                                📅 Todo
+                            </button>
+                            <button onclick="setTimelineFilter('lastMonth')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastMonth' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                                📆 Último Mes
+                            </button>
+                            <button onclick="setTimelineFilter('lastWeek')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastWeek' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                                🗓️ Última Semana
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Estadísticas del período -->
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="bg-slate-50 rounded-lg p-3 text-center">
+                            <p class="text-xs text-slate-500 uppercase font-bold">Período</p>
+                            <p class="text-lg font-bold text-slate-800">${timelineData.length} días</p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3 text-center">
+                            <p class="text-xs text-slate-500 uppercase font-bold">Total en Período</p>
+                            <p class="text-lg font-bold text-slate-800">${totalObs} obs.</p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3 text-center">
+                            <p class="text-xs text-slate-500 uppercase font-bold">Promedio/Día</p>
+                            <p class="text-lg font-bold text-slate-800">${avgPerDay}</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Gráfico de línea de tiempo -->
+                    <div class="overflow-x-auto pb-4">
+                        <div class="relative" style="min-width: ${chartWidth}px; height: ${chartHeight + 60}px;">
+                            <!-- Grid lines -->
+                            <div class="absolute inset-0" style="height: ${chartHeight}px;">
+                                ${[0, 25, 50, 75, 100].map(pct => `
+                                    <div class="absolute w-full border-t border-slate-100" style="top: ${pct}%; left: 40px; right: 0;">
+                                        <span class="absolute -left-10 -top-2 text-xs text-slate-400 w-8 text-right">${Math.round(maxTotal * (100 - pct) / 100)}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <!-- Bars -->
+                            <div class="absolute flex items-end gap-2" style="left: 50px; bottom: 40px; height: ${chartHeight}px;">
+                                ${timelineData.map((d, i) => {
+                                    const totalHeight = (d.total / maxTotal) * chartHeight;
+                                    const cerradoHeight = (d.cerrado / maxTotal) * chartHeight;
+                                    const iniciadoHeight = (d.iniciado / maxTotal) * chartHeight;
+                                    const abiertoHeight = (d.abierto / maxTotal) * chartHeight;
+                                    
+                                    return `
+                                        <div class="relative group" style="width: ${barWidth}px;">
+                                            <div class="flex flex-col-reverse" style="height: ${totalHeight}px;">
+                                                <div class="bg-emerald-500 transition-all hover:opacity-80" style="height: ${cerradoHeight}px;" title="Cerrado: ${d.cerrado}"></div>
+                                                <div class="bg-amber-500 transition-all hover:opacity-80" style="height: ${iniciadoHeight}px;" title="Iniciado: ${d.iniciado}"></div>
+                                                <div class="bg-rose-500 transition-all hover:opacity-80" style="height: ${abiertoHeight}px;" title="Abierto: ${d.abierto}"></div>
+                                            </div>
+                                            <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap pointer-events-none">
+                                                ${d.displayDate}: ${d.total} obs.
+                                            </div>
+                                            <div class="text-xs text-slate-500 text-center mt-2 transform -rotate-45 origin-top-left translate-x-4" style="width: 60px;">${d.displayDate}</div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Leyenda -->
+                    <div class="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-slate-100">
+                        <div class="flex items-center gap-2">
+                            <div class="w-4 h-4 bg-rose-500 rounded"></div>
+                            <span class="text-xs text-slate-600">Abierto</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-4 h-4 bg-amber-500 rounded"></div>
+                            <span class="text-xs text-slate-600">Iniciado</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-4 h-4 bg-emerald-500 rounded"></div>
+                            <span class="text-xs text-slate-600">Cerrado</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderStatusChart(statusMap) {
             const colors = { 'Cerrado': '#059669', 'Iniciado': '#f59e0b', 'Abierto': '#be123c', 'Listo para revisión': '#3b82f6' };
             const total = Object.values(statusMap).reduce((a, b) => a + b, 0);
@@ -404,26 +562,47 @@
 
                         <!-- KPIs -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4" style="border-left-color: #0f172a">
+                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #0f172a">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Observaciones</p>
                                 <h3 class="text-4xl font-extrabold text-slate-900 mt-2">${analytics.total}</h3>
+                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-64 shadow-lg pointer-events-none">
+                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
+                                    <p>Conteo total de todas las observaciones en el sistema (filtradas por tipo si aplica).</p>
+                                </div>
                             </div>
-                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4" style="border-left-color: #be123c">
+                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #be123c">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Hallazgos Críticos</p>
                                 <h3 class="text-4xl font-extrabold text-rose-600 mt-2">${analytics.critical}</h3>
+                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-64 shadow-lg pointer-events-none">
+                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
+                                    <p>Conteo de observaciones con Prioridad = "Urgent"</p>
+                                    <p class="mt-1 text-slate-300">Actualmente: ${analytics.critical} de ${analytics.total}</p>
+                                </div>
                             </div>
-                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4" style="border-left-color: #059669">
+                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #059669">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Efectividad</p>
                                 <div class="flex items-baseline gap-1">
                                     <h3 class="text-4xl font-extrabold text-emerald-600 mt-2">${analytics.effectivenessRate}</h3>
                                     <span class="text-sm text-slate-500">%</span>
                                 </div>
+                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-72 shadow-lg pointer-events-none">
+                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
+                                    <p class="font-mono bg-slate-800 p-2 rounded mt-1">(Cerrados / Total) × 100</p>
+                                    <p class="mt-2 text-slate-300">Actualmente: (${analytics.closed} / ${analytics.total}) × 100 = ${analytics.effectivenessRate}%</p>
+                                    <p class="mt-2 text-emerald-400">↑ Mayor % = Mejor desempeño en cierre</p>
+                                </div>
                             </div>
-                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4" style="border-left-color: #f59e0b">
+                            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #f59e0b">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Índice Criticidad</p>
                                 <div class="flex items-baseline gap-1">
                                     <h3 class="text-4xl font-extrabold text-amber-600 mt-2">${analytics.criticalityIndex}</h3>
                                     <span class="text-sm text-slate-500">%</span>
+                                </div>
+                                <div class="absolute right-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-72 shadow-lg pointer-events-none">
+                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
+                                    <p class="font-mono bg-slate-800 p-2 rounded mt-1">(Críticos / Total) × 100</p>
+                                    <p class="mt-2 text-slate-300">Actualmente: (${analytics.critical} / ${analytics.total}) × 100 = ${analytics.criticalityIndex}%</p>
+                                    <p class="mt-2 text-rose-400">↑ Mayor % = Mayor riesgo/urgencia</p>
                                 </div>
                             </div>
                         </div>
@@ -454,6 +633,9 @@
                                 ${renderBarChart(analytics.tipoMap, maxTipo, true, 'tipo')}
                             </div>
                         </div>
+
+                        <!-- Timeline Chart -->
+                        ${renderTimelineSection()}
 
                         <!-- Modal para detalles de gráfico -->
                         <div id="chartDetailModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
@@ -628,6 +810,11 @@
             render();
         }
 
+        function setTimelineFilter(filter) {
+            timelineFilter = filter;
+            render();
+        }
+
         function changePage(delta) {
             const analytics = calculateAnalytics(appData, filterType);
             const maxPage = Math.ceil(analytics.raw.length / itemsPerPage);
@@ -653,8 +840,9 @@
             
             if (chartType === 'floor') {
                 items = filtered.filter(d => {
-                    let floor = d._piso.replace('TORRE>', '').trim();
-                    if (!floor || floor === 'Sin definir') floor = 'Exteriores';
+                    let floor = d._piso || 'Sin definir';
+                    floor = floor.replace('TORRE>', '').trim();
+                    if (!floor) floor = 'Sin definir';
                     return floor === filterValue;
                 });
                 titleText = `📍 Observaciones en ${filterValue}`;
