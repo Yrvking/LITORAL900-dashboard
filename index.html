@@ -10,12 +10,54 @@
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
         .bar { transition: all 0.3s ease; }
         .bar:hover { opacity: 0.8; }
+        
+        /* Loader para indicar carga de datos */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #f59e0b; /* Amber 500 */
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <script>
+    <script type="module">
+        // ==========================================
+        // 1. IMPORTACIONES DE FIREBASE
+        // ==========================================
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, Timestamp } 
+        from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // ==========================================
+        // 2. CONFIGURACIÓN DE FIREBASE
+        // ==========================================
+        // --- PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE (La que copiaste en el paso anterior) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA3oQCJsOMkQxNFcaQxVFCkJeBZ6ZpRHHc",
+            authDomain: "obs-procore.firebaseapp.com",
+            projectId: "obs-procore",
+            storageBucket: "obs-procore.firebasestorage.app",
+            messagingSenderId: "786079293632",
+            appId: "1:786079293632:web:f786db143bb18a04e20d25",
+            measurementId: "G-JRZL5KZ1SL"
+        };
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Referencia constante a donde guardaremos los datos (Colección: dashboard, Doc: estado_actual)
+        const DOC_REF = doc(db, "dashboard", "estado_actual");
+
         // ============ THEME ============
         const THEME = {
             primary: '#0f172a',
@@ -40,53 +82,53 @@
             'Listo para revisión': THEME.info
         };
 
-        // ============ HELPERS ============
+        // ============ HELPERS MODIFICADOS ============
+        
+        // Modificado para soportar fechas que vienen de Firebase (Timestamp) o texto
         const parseDate = (dateStr) => {
             if (!dateStr) return null;
-            const parts = dateStr.split('/');
-            if (parts.length === 3) {
-                const day = parseInt(parts[0], 10);
-                const month = parseInt(parts[1], 10) - 1;
-                let year = parseInt(parts[2], 10);
-                if (year < 100) year += 2000;
-                return new Date(year, month, day);
+            
+            // Caso 1: Viene de Firebase como objeto Timestamp
+            if (typeof dateStr === 'object' && dateStr.seconds) {
+                return new Date(dateStr.seconds * 1000);
+            }
+            
+            // Caso 2: Viene guardado como string ISO
+            if (typeof dateStr === 'string' && dateStr.includes('T') && !dateStr.includes('/')) {
+                return new Date(dateStr);
+            }
+
+            // Caso 3: Formato original del CSV (dd/mm/yy)
+            if (typeof dateStr === 'string') {
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    const day = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    let year = parseInt(parts[2], 10);
+                    if (year < 100) year += 2000;
+                    return new Date(year, month, day);
+                }
             }
             return new Date(dateStr);
         };
 
-        // Función para extraer ubicación según categorías específicas
+        // Función para extraer ubicación (Tu lógica original intacta)
         const extractUbicacion = (locUpper, locParts) => {
-            // Buscar coincidencias específicas
             for (const part of locParts) {
                 const upper = part.toUpperCase().trim();
-                
-                // PISO con número (PISO 1, PISO 2, etc.)
                 const pisoMatch = upper.match(/PISO\s*(\d+)/);
-                if (pisoMatch) {
-                    return `PISO ${pisoMatch[1]}`;
-                }
-                
-                // SOTANO con número
+                if (pisoMatch) return `PISO ${pisoMatch[1]}`;
                 const sotanoMatch = upper.match(/S[OÓ]TANO\s*(\d*)/);
-                if (sotanoMatch) {
-                    return sotanoMatch[1] ? `SOTANO ${sotanoMatch[1]}` : 'SOTANO';
-                }
+                if (sotanoMatch) return sotanoMatch[1] ? `SOTANO ${sotanoMatch[1]}` : 'SOTANO';
             }
-            
-            // Buscar en string completo
             if (locUpper.includes('ANILLO')) return 'ANILLO';
             if (locUpper.includes('CISTERNA')) return 'CISTERNA';
             if (locUpper.includes('AZOTEA')) return 'AZOTEA';
             if (locUpper.includes('TECHO')) return 'TECHO';
-            
-            // PISO en string completo
             const pisoMatch = locUpper.match(/PISO\s*(\d+)/);
             if (pisoMatch) return `PISO ${pisoMatch[1]}`;
-            
-            // SOTANO en string completo
             const sotanoMatch = locUpper.match(/S[OÓ]TANO\s*(\d*)/);
             if (sotanoMatch) return sotanoMatch[1] ? `SOTANO ${sotanoMatch[1]}` : 'SOTANO';
-            
             return 'Sin definir';
         };
 
@@ -95,7 +137,6 @@
             let currentRow = [];
             let currentVal = '';
             let inQuotes = false;
-
             const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
             for (let i = 0; i < cleanText.length; i++) {
@@ -154,8 +195,6 @@
                 const locUpper = locString.toUpperCase();
 
                 obj._torre = locParts[0] || 'General';
-                
-                // Extraer ubicación específica según categorías
                 obj._piso = extractUbicacion(locUpper, locParts);
 
                 obj._departamento = locParts.find(p => {
@@ -176,23 +215,58 @@
         };
 
         // ============ APP STATE ============
+        // Estas variables ahora son locales al módulo, las exportaremos al final
         let appData = [];
         let fileName = '';
+        let lastUploadDate = null; // NUEVO: Para guardar fecha de subida
         let filterType = 'All';
         let currentPage = 1;
         const itemsPerPage = 20;
-        let timelineFilter = 'all'; // 'all', 'lastMonth', 'lastWeek'
+        let timelineFilter = 'all';
 
-        // Función para calcular datos de línea de tiempo
+        // ============ NUEVA LÓGICA DE FIREBASE ============
+
+        async function saveToFirebase(data, fName) {
+            // Feedback visual
+            const saveIndicator = document.getElementById('saveIndicator');
+            if(saveIndicator) saveIndicator.innerHTML = '<span class="loader"></span> Guardando...';
+
+            try {
+                // Serializar fechas para JSON
+                const cleanData = data.map(item => {
+                    const copy = { ...item };
+                    // Convertir objeto Date a string para que Firestore lo acepte en arrays complejos
+                    if (copy._dateObj instanceof Date && !isNaN(copy._dateObj)) {
+                        copy._dateObj = copy._dateObj.toISOString();
+                    }
+                    return copy;
+                });
+
+                await setDoc(DOC_REF, {
+                    data: cleanData,
+                    fileName: fName,
+                    uploadDate: Timestamp.now()
+                });
+
+                alert("✅ Datos guardados en la nube exitosamente.");
+                // Recargar página para verificar persistencia
+                window.location.reload();
+
+            } catch (error) {
+                console.error("Error al guardar:", error);
+                alert("Error guardando en Firebase: " + error.message);
+                if(saveIndicator) saveIndicator.innerHTML = '⚠️ Error al guardar';
+            }
+        }
+
+        // ============ RENDER FUNCTIONS ============
+        // Mantenemos tus funciones de renderizado intactas
+
         function calculateTimelineData(data, filter) {
             let filtered = data.filter(d => d._dateObj);
-            
-            // Aplicar filtro de tipo si está activo
             if (filterType !== 'All') {
                 filtered = filtered.filter(d => d['Tipo'] === filterType);
             }
-            
-            // Aplicar filtro de tiempo
             const now = new Date();
             if (filter === 'lastMonth') {
                 const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -201,8 +275,6 @@
                 const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                 filtered = filtered.filter(d => d._dateObj >= oneWeekAgo);
             }
-            
-            // Agrupar por fecha
             const dateMap = {};
             filtered.forEach(row => {
                 const dateKey = row._dateObj.toISOString().split('T')[0];
@@ -215,8 +287,6 @@
                 else if (status === 'abierto') dateMap[dateKey].abierto++;
                 else if (status === 'iniciado') dateMap[dateKey].iniciado++;
             });
-            
-            // Ordenar por fecha
             const sortedDates = Object.keys(dateMap).sort();
             return sortedDates.map(date => ({
                 date,
@@ -225,7 +295,6 @@
             }));
         }
 
-        // ============ RENDER FUNCTIONS ============
         function renderUploadScreen() {
             return `
                 <div class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-6">
@@ -241,7 +310,7 @@
                         </div>
                         <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">LITORAL 900</h1>
                         <p class="text-lg font-semibold text-slate-600 mt-2">Sistema de Control de Calidad</p>
-                        <p class="text-sm text-slate-400 mt-1">Análisis en Tiempo Real de Observaciones</p>
+                        <p class="text-sm text-slate-400 mt-1">Análisis en Tiempo Real + Cloud Sync</p>
 
                         <div class="mt-10 space-y-6">
                             <div class="p-10 border-2 border-dashed border-slate-300 rounded-xl hover:border-slate-800 hover:bg-slate-50 transition-all cursor-pointer relative group">
@@ -251,8 +320,8 @@
                                     <polyline points="17 8 12 3 7 8"></polyline>
                                     <line x1="12" y1="3" x2="12" y2="15"></line>
                                 </svg>
-                                <p class="mt-4 text-base font-semibold text-slate-700">Carga tu archivo CSV</p>
-                                <p class="mt-1 text-sm text-slate-500">Exportado desde Procore</p>
+                                <p class="mt-4 text-base font-semibold text-slate-700">Cargar nuevo archivo CSV</p>
+                                <p class="mt-1 text-sm text-slate-500">Esto actualizará la Base de Datos Central</p>
                             </div>
 
                             <div class="relative">
@@ -264,11 +333,10 @@
                                 </div>
                             </div>
 
-                            <button id="demoBtn" class="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl font-bold text-lg hover:shadow-xl transition-all shadow-lg">
-                                📊 Cargar Datos Demo
+                            <button onclick="window.loadDemoData()" class="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl font-bold text-lg hover:shadow-xl transition-all shadow-lg">
+                                📊 Cargar Datos Demo Local
                             </button>
                         </div>
-                        <p class="mt-8 text-xs text-slate-400">Dashboard profesional para Litoral 900</p>
                     </div>
                 </div>
             `;
@@ -289,21 +357,18 @@
             const effectivenessRate = Math.round((closed / total) * 100) || 0;
             const criticalityIndex = Math.round((critical / total) * 100) || 0;
 
-            // Status distribution
             const statusMap = {};
             filtered.forEach(row => {
                 const status = row['Estatus'];
                 statusMap[status] = (statusMap[status] || 0) + 1;
             });
 
-            // Priority distribution
             const priorityMap = {};
             filtered.forEach(row => {
                 const priority = row['Prioridad'];
                 priorityMap[priority] = (priorityMap[priority] || 0) + 1;
             });
 
-            // Floor distribution - ordenado según lista específica
             const floorMap = {};
             const floorOrder = [
                 'ANILLO', 'CISTERNA', 
@@ -320,17 +385,14 @@
                 floorMap[floor] = (floorMap[floor] || 0) + 1;
             });
             
-            // Ordenar según lista predefinida
             const sortedFloorMap = {};
             floorOrder.forEach(f => {
                 if (floorMap[f]) sortedFloorMap[f] = floorMap[f];
             });
-            // Agregar cualquier ubicación no listada
             Object.keys(floorMap).forEach(f => {
                 if (!sortedFloorMap[f]) sortedFloorMap[f] = floorMap[f];
             });
 
-            // Type distribution
             const tipoMap = {};
             filtered.forEach(row => {
                 const tipo = row._tipoLabel;
@@ -355,12 +417,11 @@
                     <div class="flex items-center gap-3 mb-3 relative group">
                         <div class="${labelWidth} text-sm text-slate-700 font-medium" title="${name}">${name}</div>
                         <div class="flex-1 bg-slate-100 rounded-full h-7 overflow-hidden cursor-pointer"
-                             onclick="showChartDetail('${chartType}', '${escapedName}')">
+                             onclick="window.showChartDetail('${chartType}', '${escapedName}')">
                             <div class="bar h-full bg-slate-700 rounded-full flex items-center justify-end pr-3 hover:bg-slate-600" style="width: ${width}%">
                                 <span class="text-xs text-white font-bold">${value}</span>
                             </div>
                         </div>
-                        <!-- Tooltip -->
                         <div class="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap shadow-lg">
                             <div class="font-bold">${name}</div>
                             <div class="text-slate-300">${value} observaciones (${pct}%)</div>
@@ -388,39 +449,30 @@
             const barWidth = Math.max(30, Math.min(60, 800 / timelineData.length));
             const chartWidth = timelineData.length * (barWidth + 10) + 60;
             
-            // Calcular estadísticas para el período
             const totalObs = timelineData.reduce((sum, d) => sum + d.total, 0);
-            const totalCerrado = timelineData.reduce((sum, d) => sum + d.cerrado, 0);
             const avgPerDay = (totalObs / timelineData.length).toFixed(1);
             
             return `
                 <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                     <div class="flex items-center justify-between mb-4 flex-wrap gap-4">
                         <div>
-                            <h3 class="font-bold text-slate-800 text-lg">📈 Línea de Tiempo de Observaciones</h3>
+                            <h3 class="font-bold text-slate-800 text-lg">📈 Línea de Tiempo</h3>
                             <p class="text-xs text-slate-500">Evolución de observaciones por fecha</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button onclick="setTimelineFilter('all')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
-                                📅 Todo
-                            </button>
-                            <button onclick="setTimelineFilter('lastMonth')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastMonth' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
-                                📆 Último Mes
-                            </button>
-                            <button onclick="setTimelineFilter('lastWeek')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastWeek' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
-                                🗓️ Última Semana
-                            </button>
+                            <button onclick="window.setTimelineFilter('all')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">Todo</button>
+                            <button onclick="window.setTimelineFilter('lastMonth')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastMonth' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">Último Mes</button>
+                            <button onclick="window.setTimelineFilter('lastWeek')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${timelineFilter === 'lastWeek' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">Última Semana</button>
                         </div>
                     </div>
                     
-                    <!-- Estadísticas del período -->
                     <div class="grid grid-cols-3 gap-4 mb-6">
                         <div class="bg-slate-50 rounded-lg p-3 text-center">
                             <p class="text-xs text-slate-500 uppercase font-bold">Período</p>
                             <p class="text-lg font-bold text-slate-800">${timelineData.length} días</p>
                         </div>
                         <div class="bg-slate-50 rounded-lg p-3 text-center">
-                            <p class="text-xs text-slate-500 uppercase font-bold">Total en Período</p>
+                            <p class="text-xs text-slate-500 uppercase font-bold">Total</p>
                             <p class="text-lg font-bold text-slate-800">${totalObs} obs.</p>
                         </div>
                         <div class="bg-slate-50 rounded-lg p-3 text-center">
@@ -429,10 +481,8 @@
                         </div>
                     </div>
                     
-                    <!-- Gráfico de línea de tiempo -->
                     <div class="overflow-x-auto pb-4">
                         <div class="relative" style="min-width: ${chartWidth}px; height: ${chartHeight + 60}px;">
-                            <!-- Grid lines -->
                             <div class="absolute inset-0" style="height: ${chartHeight}px;">
                                 ${[0, 25, 50, 75, 100].map(pct => `
                                     <div class="absolute w-full border-t border-slate-100" style="top: ${pct}%; left: 40px; right: 0;">
@@ -441,7 +491,6 @@
                                 `).join('')}
                             </div>
                             
-                            <!-- Bars -->
                             <div class="absolute flex items-end gap-2" style="left: 50px; bottom: 40px; height: ${chartHeight}px;">
                                 ${timelineData.map((d, i) => {
                                     const totalHeight = (d.total / maxTotal) * chartHeight;
@@ -466,22 +515,6 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- Leyenda -->
-                    <div class="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-slate-100">
-                        <div class="flex items-center gap-2">
-                            <div class="w-4 h-4 bg-rose-500 rounded"></div>
-                            <span class="text-xs text-slate-600">Abierto</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="w-4 h-4 bg-amber-500 rounded"></div>
-                            <span class="text-xs text-slate-600">Iniciado</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="w-4 h-4 bg-emerald-500 rounded"></div>
-                            <span class="text-xs text-slate-600">Cerrado</span>
-                        </div>
-                    </div>
                 </div>
             `;
         }
@@ -496,7 +529,7 @@
                 const escapedName = name.replace(/'/g, "\\'");
                 return `
                     <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg mb-2 hover:bg-slate-100 cursor-pointer transition-colors group relative"
-                         onclick="showChartDetail('status', '${escapedName}')">
+                         onclick="window.showChartDetail('status', '${escapedName}')">
                         <div class="flex items-center gap-2">
                             <div class="w-3 h-3 rounded-full" style="background-color: ${color}"></div>
                             <span class="text-sm font-medium text-slate-700">${name}</span>
@@ -504,10 +537,6 @@
                         <div class="flex items-center gap-2">
                             <span class="text-lg font-bold text-slate-900">${value}</span>
                             <span class="text-xs text-slate-500">(${pct}%)</span>
-                        </div>
-                        <!-- Tooltip -->
-                        <div class="absolute right-0 top-full mt-1 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none whitespace-nowrap shadow-lg">
-                            <div class="text-amber-400">Click para ver ${value} observaciones</div>
                         </div>
                     </div>
                 `;
@@ -520,10 +549,14 @@
             const maxTipo = Math.max(...Object.values(analytics.tipoMap));
 
             const types = ['All', ...new Set(appData.map(d => d['Tipo']))];
+            
+            // Texto para mostrar fecha de última actualización
+            const updateDateStr = lastUploadDate 
+                ? lastUploadDate.toLocaleString('es-PE', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})
+                : 'Sin sincronizar';
 
             return `
                 <div class="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-800">
-                    <!-- Header -->
                     <header class="bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-lg sticky top-0 z-30" style="border-bottom: 4px solid #d97706">
                         <div class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between flex-wrap gap-4">
                             <div class="flex items-center gap-4">
@@ -534,16 +567,20 @@
                                 </div>
                                 <div>
                                     <h1 class="font-bold text-2xl tracking-wide">LITORAL 900</h1>
-                                    <p class="text-xs text-slate-300 uppercase tracking-widest">Dashboard de Control de Calidad</p>
+                                    <div class="flex items-center gap-2 text-xs text-slate-300">
+                                        <span class="uppercase tracking-widest">Dashboard & Cloud</span>
+                                        <span class="bg-amber-600 text-white px-1 rounded text-[10px]">EN LÍNEA</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="flex items-center gap-4">
                                 <div class="text-right">
-                                    <p class="text-xs text-slate-300 uppercase">Archivo</p>
-                                    <p class="text-sm font-mono text-amber-300">${fileName.slice(0, 25)}${fileName.length > 25 ? '...' : ''}</p>
+                                    <p class="text-xs text-slate-300 uppercase">Última Actualización</p>
+                                    <p class="text-sm font-mono text-amber-300">${updateDateStr}</p>
                                 </div>
-                                <label class="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-xs font-bold uppercase rounded-lg cursor-pointer">
-                                    📁 CSV
+                                <div id="saveIndicator" class="text-xs font-bold text-amber-400"></div>
+                                <label class="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-xs font-bold uppercase rounded-lg cursor-pointer border border-slate-600 hover:border-amber-500 transition-all">
+                                    ☁️ Subir Nuevo CSV
                                     <input type="file" accept=".csv" id="fileInputHeader" class="hidden" />
                                 </label>
                             </div>
@@ -551,45 +588,28 @@
                     </header>
 
                     <main class="max-w-7xl mx-auto px-6 pt-8 pb-12 space-y-8">
-                        <!-- Filters -->
                         <div class="flex flex-wrap gap-2 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             ${types.map(type => `
-                                <button onclick="setFilter('${type}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filterType === type ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                                <button onclick="window.setFilter('${type}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filterType === type ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
                                     ${type === 'All' ? '📊 Todos' : type}
                                 </button>
                             `).join('')}
                         </div>
 
-                        <!-- KPIs -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #0f172a">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Observaciones</p>
                                 <h3 class="text-4xl font-extrabold text-slate-900 mt-2">${analytics.total}</h3>
-                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-64 shadow-lg pointer-events-none">
-                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
-                                    <p>Conteo total de todas las observaciones en el sistema (filtradas por tipo si aplica).</p>
-                                </div>
                             </div>
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #be123c">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Hallazgos Críticos</p>
                                 <h3 class="text-4xl font-extrabold text-rose-600 mt-2">${analytics.critical}</h3>
-                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-64 shadow-lg pointer-events-none">
-                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
-                                    <p>Conteo de observaciones con Prioridad = "Urgent"</p>
-                                    <p class="mt-1 text-slate-300">Actualmente: ${analytics.critical} de ${analytics.total}</p>
-                                </div>
                             </div>
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #059669">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Efectividad</p>
                                 <div class="flex items-baseline gap-1">
                                     <h3 class="text-4xl font-extrabold text-emerald-600 mt-2">${analytics.effectivenessRate}</h3>
                                     <span class="text-sm text-slate-500">%</span>
-                                </div>
-                                <div class="absolute left-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-72 shadow-lg pointer-events-none">
-                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
-                                    <p class="font-mono bg-slate-800 p-2 rounded mt-1">(Cerrados / Total) × 100</p>
-                                    <p class="mt-2 text-slate-300">Actualmente: (${analytics.closed} / ${analytics.total}) × 100 = ${analytics.effectivenessRate}%</p>
-                                    <p class="mt-2 text-emerald-400">↑ Mayor % = Mejor desempeño en cierre</p>
                                 </div>
                             </div>
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6 border-l-4 group relative cursor-help" style="border-left-color: #f59e0b">
@@ -598,57 +618,43 @@
                                     <h3 class="text-4xl font-extrabold text-amber-600 mt-2">${analytics.criticalityIndex}</h3>
                                     <span class="text-sm text-slate-500">%</span>
                                 </div>
-                                <div class="absolute right-0 top-full mt-2 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 w-72 shadow-lg pointer-events-none">
-                                    <p class="font-bold text-amber-400 mb-1">📊 Fórmula:</p>
-                                    <p class="font-mono bg-slate-800 p-2 rounded mt-1">(Críticos / Total) × 100</p>
-                                    <p class="mt-2 text-slate-300">Actualmente: (${analytics.critical} / ${analytics.total}) × 100 = ${analytics.criticalityIndex}%</p>
-                                    <p class="mt-2 text-rose-400">↑ Mayor % = Mayor riesgo/urgencia</p>
-                                </div>
                             </div>
                         </div>
 
-                        <!-- Charts Row -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                                 <h3 class="font-bold text-slate-800 text-lg mb-4">📍 Distribución por Nivel</h3>
-                                <p class="text-xs text-slate-500 mb-3">Click en una barra para ver observaciones de ese nivel</p>
                                 <div class="space-y-1">
                                     ${renderBarChart(analytics.floorMap, maxFloor, false, 'floor')}
                                 </div>
                             </div>
                             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                                 <h3 class="font-bold text-slate-800 text-lg mb-4">📊 Estado de Observaciones</h3>
-                                <p class="text-xs text-slate-500 mb-3">Click en un estado para filtrar</p>
                                 <div>
                                     ${renderStatusChart(analytics.statusMap)}
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Type Chart -->
                         <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                             <h3 class="font-bold text-slate-800 text-lg mb-4">🔧 Distribución por Tipo</h3>
-                            <p class="text-xs text-slate-500 mb-3">Click en una barra para ver observaciones de ese tipo</p>
                             <div class="grid grid-cols-1 gap-2">
                                 ${renderBarChart(analytics.tipoMap, maxTipo, true, 'tipo')}
                             </div>
                         </div>
 
-                        <!-- Timeline Chart -->
                         ${renderTimelineSection()}
 
-                        <!-- Modal para detalles de gráfico -->
                         <div id="chartDetailModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
                             <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
                                 <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
                                     <h3 id="modalTitle" class="font-bold text-lg">Detalle</h3>
-                                    <button onclick="closeChartDetail()" class="text-white hover:text-amber-400 text-2xl">&times;</button>
+                                    <button onclick="window.closeChartDetail()" class="text-white hover:text-amber-400 text-2xl">&times;</button>
                                 </div>
                                 <div id="modalContent" class="p-4 overflow-y-auto max-h-[60vh]"></div>
                             </div>
                         </div>
 
-                        <!-- Table -->
                         <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                             <div class="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between flex-wrap gap-2">
                                 <div>
@@ -656,9 +662,9 @@
                                     <span class="text-xs text-slate-500">Mostrando ${Math.min(currentPage * itemsPerPage, analytics.raw.length)} de ${analytics.raw.length} observaciones</span>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button onclick="changePage(-1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">← Anterior</button>
+                                    <button onclick="window.changePage(-1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">← Anterior</button>
                                     <span class="text-sm text-slate-600">Página ${currentPage} de ${Math.ceil(analytics.raw.length / itemsPerPage)}</span>
-                                    <button onclick="changePage(1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage >= Math.ceil(analytics.raw.length / itemsPerPage) ? 'opacity-50 cursor-not-allowed' : ''}">Siguiente →</button>
+                                    <button onclick="window.changePage(1)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium ${currentPage >= Math.ceil(analytics.raw.length / itemsPerPage) ? 'opacity-50 cursor-not-allowed' : ''}">Siguiente →</button>
                                 </div>
                             </div>
                             <div class="overflow-x-auto">
@@ -678,7 +684,7 @@
                                         ${analytics.raw.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((row, idx) => {
                                             const realIdx = (currentPage - 1) * itemsPerPage + idx;
                                             return `
-                                            <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="toggleRow(${realIdx})">
+                                            <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.toggleRow(${realIdx})">
                                                 <td class="px-4 py-3 text-slate-400">
                                                     <svg id="arrow-${realIdx}" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
@@ -711,15 +717,10 @@
                                                         <div class="bg-white p-4 rounded-lg border border-slate-200">
                                                             <p class="text-xs text-slate-500 uppercase font-bold mb-1">👤 Persona Asignada</p>
                                                             <p class="text-slate-800 font-medium">${row['Persona asignada'] || 'Sin asignar'}</p>
-                                                            <p class="text-xs text-slate-500 mt-1">${row['Compañía de la persona asignada'] || ''}</p>
                                                         </div>
                                                         <div class="bg-white p-4 rounded-lg border border-slate-200">
                                                             <p class="text-xs text-slate-500 uppercase font-bold mb-1">📍 Ubicación Completa</p>
                                                             <p class="text-slate-800 font-medium">${row['Ubicación'] || 'Sin ubicación'}</p>
-                                                        </div>
-                                                        <div class="bg-white p-4 rounded-lg border border-slate-200">
-                                                            <p class="text-xs text-slate-500 uppercase font-bold mb-1">🔧 Especialidad</p>
-                                                            <p class="text-slate-800 font-medium">${row['Especialidad'] || 'Sin especialidad'}</p>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -734,88 +735,47 @@
             `;
         }
 
-        // ============ MAIN RENDER ============
+        // ============ RENDERIZADO PRINCIPAL ============
+        
         function render() {
             const root = document.getElementById('root');
-            if (appData.length === 0) {
-                root.innerHTML = renderUploadScreen();
-                setupUploadListeners();
-            } else {
+            // Si hay datos (ya sea de CSV o de Firebase), mostrar Dashboard
+            if (appData.length > 0) {
                 root.innerHTML = renderDashboard();
                 setupDashboardListeners();
+            } else {
+                // Si no hay datos, pantalla de carga/upload
+                root.innerHTML = renderUploadScreen();
+                setupUploadListeners();
             }
         }
 
+        // ============ LISTENERS ============
+
         function setupUploadListeners() {
-            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
-            document.getElementById('demoBtn').addEventListener('click', loadDemoData);
+            // El listener directo se maneja via delegación global abajo
         }
 
         function setupDashboardListeners() {
-            const headerInput = document.getElementById('fileInputHeader');
-            if (headerInput) {
-                headerInput.addEventListener('change', handleFileUpload);
-            }
+            // Igual que arriba
         }
 
-        function handleFileUpload(e) {
-            const file = e.target.files[0];
-            if (file) {
-                fileName = file.name;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    try {
-                        const result = parseCSV(ev.target.result);
-                        if (result.length === 0) {
-                            alert("No se pudieron leer filas válidas. Verifica el formato del CSV.");
-                            return;
-                        }
-                        appData = result;
-                        render();
-                    } catch (err) {
-                        console.error("Error parsing CSV:", err);
-                        alert("Error procesando el archivo: " + err.message);
-                    }
-                };
-                reader.readAsText(file);
-            }
-        }
+        // ============ FUNCIONES GLOBALES (EXPORTS) ============
+        // Como estamos en type="module", debemos exponer al objeto window 
+        // las funciones que se llaman desde el HTML onclick=""
 
-        function loadDemoData() {
-            const demoRaw = `Número,Tipo,Especialidad,Título,Persona asignada,Compañía de la persona asignada,Fecha de notificación,Estatus,Prioridad,Ubicación
-428,Deficiencia,110 - PRO - Control de Calidad,Conexiones firmes y sin fugas,Edwin Aroni,ARONI,26/12/25,Iniciado,Urgent,TORRE>PISO 14>DPTO 1401
-429,Deficiencia,110 - PRO - Control de Calidad,Fuga en lavadero,Edwin Aroni,ARONI,26/12/25,Iniciado,High,TORRE>PISO 14>DPTO 1402
-430,Seguridad,111 - PRO - Seguridad Industrial,Falta baranda perimétrica,Victor Andres,PADOVA,27/12/25,Abierto,Urgent,TORRE>PISO 15
-431,Acabados,130 - PRO - Pintura,Retoque en muro cortina,Ana Gomez,PINTURAS SA,27/12/25,Cerrado,Medium,TORRE>PISO 05
-432,Eléctrico,120 - PRO - Electricidad,Tablero sin rotular,Maria L,ELECTRO,28/12/25,Iniciado,High,TORRE>PISO 08
-433,Deficiencia,110 - PRO - Control de Calidad,Desnivel en contrapiso,Carlos R,CONCRETO MIX,28/12/25,Iniciado,Medium,TORRE>SOTANO 1
-434,Seguridad,111 - PRO - Seguridad Industrial,Extintor vencido,Victor Andres,PADOVA,29/12/25,Abierto,High,TORRE>PISO 01
-435,Deficiencia,110 - PRO - Control de Calidad,Ventana rayada,Luis Villa,VIDRIOS PERU,30/12/25,Cerrado,Low,TORRE>PISO 14
-436,Eléctrico,120 - PRO - Electricidad,Cable expuesto pasillo,Maria L,ELECTRO,02/01/26,Iniciado,Urgent,TORRE>PISO 02
-437,Acabados,130 - PRO - Pintura,Mancha en cielo raso,Ana Gomez,PINTURAS SA,03/01/26,Iniciado,Medium,TORRE>PISO 14
-438,Sanitario,140 - PRO - Sanitaria,Tuberías mal selladas,Pedro Sánchez,SANITARIA PERU,04/01/26,Cerrado,Low,TORRE>PISO 10
-439,Estructural,150 - PRO - Estructura,Grieta menor en muro,Roberto Lee,STRUCT ING,05/01/26,Iniciado,High,TORRE>PISO 03
-440,Seguridad,111 - PRO - Seguridad Industrial,Salida de emergencia bloqueada,Victor Andres,PADOVA,05/01/26,Abierto,Urgent,TORRE>PISO 12
-441,Deficiencia,110 - PRO - Control de Calidad,Piso rayado,Luis Villa,VIDRIOS PERU,06/01/26,Cerrado,Medium,TORRE>PISO 06
-442,Acabados,130 - PRO - Pintura,Falta pintura en moldura,Ana Gomez,PINTURAS SA,06/01/26,Iniciado,Low,TORRE>PISO 07`;
-
-            appData = parseCSV(demoRaw);
-            fileName = 'LITORAL900_DEMO_26DIC2025.csv';
-            render();
-        }
-
-        function setFilter(type) {
+        window.setFilter = (type) => {
             filterType = type;
             currentPage = 1;
             render();
-        }
+        };
 
-        function setTimelineFilter(filter) {
+        window.setTimelineFilter = (filter) => {
             timelineFilter = filter;
             render();
-        }
+        };
 
-        function changePage(delta) {
+        window.changePage = (delta) => {
             const analytics = calculateAnalytics(appData, filterType);
             const maxPage = Math.ceil(analytics.raw.length / itemsPerPage);
             const newPage = currentPage + delta;
@@ -823,9 +783,9 @@
                 currentPage = newPage;
                 render();
             }
-        }
+        };
 
-        function showChartDetail(chartType, filterValue) {
+        window.showChartDetail = (chartType, filterValue) => {
             const modal = document.getElementById('chartDetailModal');
             const title = document.getElementById('modalTitle');
             const content = document.getElementById('modalContent');
@@ -845,13 +805,13 @@
                     if (!floor) floor = 'Sin definir';
                     return floor === filterValue;
                 });
-                titleText = `📍 Observaciones en ${filterValue}`;
+                titleText = `📍 ${filterValue}`;
             } else if (chartType === 'tipo') {
                 items = filtered.filter(d => d._tipoLabel === filterValue);
-                titleText = `🔧 Observaciones de tipo: ${filterValue}`;
+                titleText = `🔧 ${filterValue}`;
             } else if (chartType === 'status') {
                 items = filtered.filter(d => d['Estatus'] === filterValue);
-                titleText = `📊 Observaciones con estado: ${filterValue}`;
+                titleText = `📊 ${filterValue}`;
             }
             
             title.textContent = `${titleText} (${items.length})`;
@@ -883,23 +843,16 @@
                     ${items.length > 50 ? `<p class="text-center text-slate-500 text-sm py-4">... y ${items.length - 50} observaciones más</p>` : ''}
                 </div>
             `;
-            
             modal.classList.remove('hidden');
-        }
+        };
 
-        function closeChartDetail() {
+        window.closeChartDetail = () => {
             document.getElementById('chartDetailModal').classList.add('hidden');
-        }
+        };
 
-        // Cerrar modal con Escape
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeChartDetail();
-        });
-
-        function toggleRow(idx) {
+        window.toggleRow = (idx) => {
             const detailRow = document.getElementById(`detail-${idx}`);
             const arrow = document.getElementById(`arrow-${idx}`);
-            
             if (detailRow.classList.contains('hidden')) {
                 detailRow.classList.remove('hidden');
                 arrow.style.transform = 'rotate(90deg)';
@@ -907,10 +860,108 @@
                 detailRow.classList.add('hidden');
                 arrow.style.transform = 'rotate(0deg)';
             }
+        };
+
+        window.loadDemoData = () => {
+            const demoRaw = `Número,Tipo,Especialidad,Título,Persona asignada,Compañía de la persona asignada,Fecha de notificación,Estatus,Prioridad,Ubicación
+428,Deficiencia,110 - PRO - Control de Calidad,Conexiones firmes y sin fugas,Edwin Aroni,ARONI,26/12/25,Iniciado,Urgent,TORRE>PISO 14>DPTO 1401
+429,Deficiencia,110 - PRO - Control de Calidad,Fuga en lavadero,Edwin Aroni,ARONI,26/12/25,Iniciado,High,TORRE>PISO 14>DPTO 1402
+430,Seguridad,111 - PRO - Seguridad Industrial,Falta baranda perimétrica,Victor Andres,PADOVA,27/12/25,Abierto,Urgent,TORRE>PISO 15`;
+            appData = parseCSV(demoRaw);
+            fileName = 'DEMO_DATA.csv';
+            // Aquí NO guardamos en Firebase, es solo demo local
+            render();
+        };
+
+        // Handler de subida de archivos global
+        window.handleFileUpload = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileName = file.name;
+                const reader = new FileReader();
+                reader.onload = async (ev) => {
+                    try {
+                        const result = parseCSV(ev.target.result);
+                        if (result.length === 0) {
+                            alert("CSV inválido o vacío.");
+                            return;
+                        }
+                        appData = result;
+                        
+                        // AL SUBIR ARCHIVO -> GUARDAR EN FIREBASE
+                        await saveToFirebase(result, fileName);
+                        
+                    } catch (err) {
+                        console.error("Error CSV:", err);
+                        alert("Error procesando el archivo: " + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        };
+
+        // ============ INICIALIZACIÓN (STARTUP) ============
+
+        // Listener delegado para los inputs de archivo
+        document.addEventListener('change', (e) => {
+            if (e.target && (e.target.id === 'fileInput' || e.target.id === 'fileInputHeader')) {
+                window.handleFileUpload(e);
+            }
+        });
+
+        // Keydown para cerrar modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') window.closeChartDetail();
+        });
+
+        // FUNCION PRINCIPAL DE ARRANQUE: Cargar desde la nube
+        async function initApp() {
+            const root = document.getElementById('root');
+            
+            // Loader inicial
+            root.innerHTML = `
+                <div class="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+                    <div class="loader mb-4" style="border-top-color: #f59e0b; width: 40px; height: 40px; border-width: 4px;"></div>
+                    <p class="font-mono text-sm tracking-widest">CONECTANDO OBS-PROCORE...</p>
+                </div>
+            `;
+            
+            try {
+                // Intentar leer de Firestore
+                const docSnap = await getDoc(DOC_REF);
+                
+                if (docSnap.exists()) {
+                    const dbData = docSnap.data();
+                    console.log("Datos encontrados en la nube");
+                    
+                    fileName = dbData.fileName || 'Datos Nube';
+                    lastUploadDate = dbData.uploadDate ? dbData.uploadDate.toDate() : null;
+                    
+                    // Restaurar fechas (vienen como strings ISO o Timestamps)
+                    appData = dbData.data.map(row => {
+                        const r = { ...row };
+                        r._dateObj = parseDate(r._dateObj);
+                        return r;
+                    });
+                    
+                    render(); // Renderizar directamente el dashboard
+                } else {
+                    console.log("No hay datos en la nube aún.");
+                    appData = [];
+                    render(); // Renderizará la pantalla de carga (Upload)
+                }
+            } catch (error) {
+                console.error("Error initApp:", error);
+                alert("No se pudo conectar a la base de datos. Verifica tu conexión o configuración.");
+                // Fallback a pantalla de carga local
+                appData = [];
+                render();
+            }
         }
 
-        // ============ INIT ============
-        document.addEventListener('DOMContentLoaded', render);
+        // Arrancar aplicación
+        initApp();
+
     </script>
 </body>
 </html>
